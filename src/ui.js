@@ -26,19 +26,12 @@ function ensureToastContainer() {
   return toastContainerPromise;
 }
 
-/**
- * Show a toast notification.
- * @param {string} message
- * @param {"info"|"success"|"error"|"warning"} type
- * @param {number} durationMs
- */
 export async function showToast(message, type = "info", durationMs = 3000) {
   await ensureToastContainer();
   const toast = document.createElement("div");
   toast.className = `toast toast-${type}`;
   toast.textContent = message;
   toastContainer.appendChild(toast);
-  // Force reflow for animation
   requestAnimationFrame(() => toast.classList.add("show"));
   setTimeout(() => {
     toast.classList.remove("show");
@@ -46,10 +39,6 @@ export async function showToast(message, type = "info", durationMs = 3000) {
   }, durationMs);
 }
 
-/**
- * Create a skeleton placeholder for a card.
- * @param {number} lines Number of text lines to simulate.
- */
 function createSkeletonCard(lines = 3) {
   const card = document.createElement("div");
   card.className = "card skeleton";
@@ -61,11 +50,6 @@ function createSkeletonCard(lines = 3) {
   return card;
 }
 
-/**
- * Render skeleton placeholders while data is loading.
- * @param {HTMLElement} container Target container.
- * @param {number} count Number of skeleton cards.
- */
 export function renderSkeleton(container, count = 6) {
   container.innerHTML = "";
   const grid = document.createElement("div");
@@ -76,18 +60,12 @@ export function renderSkeleton(container, count = 6) {
   container.appendChild(grid);
 }
 
-/**
- * Format hashrate from KH/s to human readable.
- */
 export function formatHashrate(kh) {
   if (!kh || kh === 0) return "0 H/s";
   if (kh >= 1000) return `${(kh / 1000).toFixed(2)} MH/s`;
   return `${kh.toFixed(2)} KH/s`;
 }
 
-/**
- * Format bytes to human readable.
- */
 export function formatBytes(bytes) {
   if (bytes >= 1073741824) return `${(bytes / 1073741824).toFixed(2)} GB`;
   if (bytes >= 1048576) return `${(bytes / 1048576).toFixed(2)} MB`;
@@ -95,9 +73,6 @@ export function formatBytes(bytes) {
   return `${bytes} B`;
 }
 
-/**
- * Format uptime seconds to "Xd Yh Zm".
- */
 export function formatUptime(seconds) {
   const d = Math.floor(seconds / 86400);
   const h = Math.floor((seconds % 86400) / 3600);
@@ -107,14 +82,18 @@ export function formatUptime(seconds) {
 
 /**
  * Format number with thousand separators.
+ *
+ * API responses can legitimately omit counters while a proxy is starting.
+ * The old implementation called toString() directly and could break the
+ * whole dashboard render path on a missing/null field.
  */
 export function formatNumber(num) {
-  return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  if (num === null || num === undefined || Number.isNaN(Number(num))) {
+    return "0";
+  }
+  return Number(num).toLocaleString("en-US");
 }
 
-/**
- * Determine status class and text.
- */
 export function getStatusInfo(miners) {
   if (!miners || miners.now === 0) {
     return { cls: "status-offline", text: "离线" };
