@@ -37,7 +37,7 @@ test("static server restricts public assets and serves a startup snapshot", { ti
     "src/status.js": "export const status = true;",
     "src/storage.js": "export const storage = true;",
     "src/ui.js": "export const ui = true;",
-    "package.json": "{ \"private\": true }",
+    "package.json": "{ \"private\": true, \"type\": \"module\" }",
     "README.md": "private readme",
     ".git/config": "[remote \"origin\"]",
   };
