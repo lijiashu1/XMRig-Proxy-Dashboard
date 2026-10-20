@@ -4,7 +4,10 @@ on:
   issue_comment:
     types: [created]
 
-permissions: write-all
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
 
 jobs:
   gemini-code-review:
@@ -14,28 +17,19 @@ jobs:
       contains(github.event.comment.body, '/gemini-review')
     steps:
       - name: PR Info
-        run: |
-          echo "Comment: ${{ github.event.comment.body }}"
-          echo "Issue Number: ${{ github.event.issue.number }}"
-          echo "Repository: ${{ github.repository }}"
-
-      - name: Checkout Repo
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-
-      - name: Get PR Details
-        id: pr
-        run: |
-          PR_JSON=$(gh api repos/${{ github.repository }}/pulls/${{ github.event.issue.number }})
-          echo "head_sha=$(echo $PR_JSON | jq -r .head.sha)" >> $GITHUB_OUTPUT
-          echo "base_sha=$(echo $PR_JSON | jq -r .base.sha)" >> $GITHUB_OUTPUT
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          printf 'Comment: %s\n' "$COMMENT_BODY"
+          printf 'Issue Number: %s\n' "$ISSUE_NUMBER"
+          printf 'Repository: %s\n' "$REPOSITORY"
 
-      - uses: truongnh1992/gemini-ai-code-reviewer@main
+      - name: Gemini AI code review
+        uses: truongnh1992/gemini-ai-code-reviewer@f9ab8e6b6ec8507aff632c159b5b8c0a771be215
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: gemini-2.5-flash # Optional, default is `gemini-2.5-flash`
+          GEMINI_MODEL: gemini-2.5-flash
           EXCLUDE: "*.md,*.txt,package-lock.json,*.yml,*.yaml"

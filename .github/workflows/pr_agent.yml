@@ -7,7 +7,7 @@ on:
 
 jobs:
   pr_agent_job:
-    # Ignore bot events and only let supported PR-Agent slash commands invoke PR-Agent.
+    # Ignore bot events and only allow read-only slash commands. Commands that commit changes are disabled.
     if: >-
       ${{
         github.event.sender.type != 'Bot' &&
@@ -28,20 +28,12 @@ jobs:
               startsWith(github.event.comment.body, '/describe ') ||
               github.event.comment.body == '/describe_pr' ||
               startsWith(github.event.comment.body, '/describe_pr ') ||
-              github.event.comment.body == '/improve' ||
-              startsWith(github.event.comment.body, '/improve ') ||
-              github.event.comment.body == '/improve_code' ||
-              startsWith(github.event.comment.body, '/improve_code ') ||
               github.event.comment.body == '/ask' ||
               startsWith(github.event.comment.body, '/ask ') ||
               github.event.comment.body == '/ask_question' ||
               startsWith(github.event.comment.body, '/ask_question ') ||
               github.event.comment.body == '/ask_line' ||
               startsWith(github.event.comment.body, '/ask_line ') ||
-              github.event.comment.body == '/update_changelog' ||
-              startsWith(github.event.comment.body, '/update_changelog ') ||
-              github.event.comment.body == '/add_docs' ||
-              startsWith(github.event.comment.body, '/add_docs ') ||
               github.event.comment.body == '/generate_labels' ||
               startsWith(github.event.comment.body, '/generate_labels ') ||
               github.event.comment.body == '/config' ||
@@ -60,13 +52,12 @@ jobs:
     permissions:
       issues: write
       pull-requests: write
-      contents: write
-      checks: write
+      contents: read
     name: Run PR Agent on pull requests, review events, and supported slash commands
     steps:
       - name: PR Agent action step
         id: pragent
-        uses: the-pr-agent/pr-agent@v0.46.0
+        uses: the-pr-agent/pr-agent@1d01f24f455bb879c1d9c557ad7de3d72dcc7975
     env:
       OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -87,4 +78,4 @@ jobs:
       github_action_config.push_trigger_ignore_bot_commits: "true"
       github_action_config.review_states: '["changes_requested"]'
       github_action_config.review_author_types: '["User"]'
-      github_action_config.review_commands: '["/improve"]'
+      github_action_config.review_commands: '[]'
