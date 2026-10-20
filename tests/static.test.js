@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
+import { PUBLIC_ASSET_PATHS, matchesAllowlistedPath } from "../src/public-assets.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -138,15 +139,11 @@ test("PR Agent action is immutable-pinned and cannot write repository content", 
 });
 
 
+
 test("every static-server allowlist entry exists in this checkout", () => {
-  const server = read("bin/server.js");
-  const match = server.match(/const publicAssetPaths = \[([\s\S]*?)\];/);
-  assert.ok(match, "static server must declare an explicit public asset allowlist");
+  assert.ok(PUBLIC_ASSET_PATHS.length > 0, "public asset allowlist must not be empty");
 
-  const assetPaths = [...match[1].matchAll(/"([^"]+)"/g)].map(([, assetPath]) => assetPath);
-  assert.ok(assetPaths.length > 0, "allowlist must not be empty");
-
-  for (const assetPath of assetPaths) {
+  for (const assetPath of PUBLIC_ASSET_PATHS) {
     assert.ok(
       existsSync(join(root, assetPath)),
       `allowlisted asset does not exist: ${assetPath}`,
@@ -154,11 +151,9 @@ test("every static-server allowlist entry exists in this checkout", () => {
   }
 });
 
-test("static server compares path casing according to platform path semantics", () => {
-  const server = read("bin/server.js");
-
-  assert.match(server, /function matchesAllowlistedPath\(/);
-  assert.match(server, /process\.platform === "win32"/);
-  assert.match(server, /canonicalRelativePath\.toLocaleLowerCase\("en-US"\)/);
-  assert.match(server, /return canonicalRelativePath === assetPath/);
+test("path allowlist comparison follows platform-specific casing rules", () => {
+  assert.equal(matchesAllowlistedPath("src/main.js", "src/main.js", "win32"), true);
+  assert.equal(matchesAllowlistedPath("Src/main.js", "src/main.js", "win32"), true);
+  assert.equal(matchesAllowlistedPath("src/main.js", "src/main.js", "linux"), true);
+  assert.equal(matchesAllowlistedPath("Src/main.js", "src/main.js", "linux"), false);
 });

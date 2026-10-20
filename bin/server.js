@@ -4,24 +4,14 @@ import { createServer } from "node:http";
 import { open, realpath } from "node:fs/promises";
 import { extname, isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { PUBLIC_ASSET_PATHS, matchesAllowlistedPath } from "../src/public-assets.js";
 
 const root = await realpath(resolve(fileURLToPath(new URL("..", import.meta.url))));
 const port = Number(process.env.PORT || 8000);
 const host = process.env.HOST || "127.0.0.1";
 
-// Only these files are public. Cache validated bytes at startup so a request
-// never follows a filesystem path that could be swapped for a symlink later.
-const publicAssetPaths = [
-  "index.html",
-  "styles.css",
-  "panel.png",
-  "src/api.js",
-  "src/main.js",
-  "src/status.js",
-  "src/storage.js",
-  "src/ui.js",
-];
-
+// Only explicitly allowlisted files are public. Cache validated bytes at
+// startup so requests never follow a path that can later be swapped for a symlink.
 const mime = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -47,22 +37,10 @@ function isWithinRoot(candidate) {
     !isAbsolute(pathFromRoot);
 }
 
-function matchesAllowlistedPath(canonicalRelativePath, assetPath) {
-  // On Windows, realpath() can return filesystem-preserved component casing
-  // even when the checked-out path was requested with the allowlist's casing.
-  // Compare case-insensitively only on Windows; other platforms retain the
-  // exact-case check to avoid accepting a different case-sensitive file.
-  if (process.platform === "win32") {
-    return canonicalRelativePath.toLocaleLowerCase("en-US") ===
-      assetPath.toLocaleLowerCase("en-US");
-  }
-  return canonicalRelativePath === assetPath;
-}
-
 async function loadPublicAssets() {
   const assets = new Map();
 
-  for (const assetPath of publicAssetPaths) {
+  for (const assetPath of PUBLIC_ASSET_PATHS) {
     const filePath = resolve(root, assetPath);
     const realFilePath = await realpath(filePath);
     const canonicalRelativePath = relative(root, realFilePath).split(sep).join("/");

@@ -27,6 +27,7 @@ test("static server restricts public assets and serves a startup snapshot", { ti
   await mkdir(join(packageRoot, "bin"), { recursive: true });
   await mkdir(join(packageRoot, "src"), { recursive: true });
   await copyFile(join(root, "bin/server.js"), join(packageRoot, "bin/server.js"));
+  await copyFile(join(root, "src/public-assets.js"), join(packageRoot, "src/public-assets.js"));
 
   const fixtureFiles = {
     "index.html": "<!doctype html><title>XMRig Proxy Dashboard</title>",
