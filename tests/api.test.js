@@ -144,3 +144,33 @@ test("successful write-access probe reports unrestricted", async () => {
 
   assert.equal(await probeWriteAccess(), "unrestricted");
 });
+
+
+test("request omits Authorization when no API token is configured", async () => {
+  saveConfig({
+    apiUrl: "https://proxy.example:8080/",
+    apiToken: "",
+    remember: true,
+    refreshInterval: 10,
+  });
+
+  let received;
+  globalThis.fetch = async (url, options) => {
+    received = { url, options };
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        return { miners: { now: 1 } };
+      },
+    };
+  };
+
+  const result = await request("/1/summary", {
+    headers: { Authorization: "Bearer stale-token" },
+  });
+
+  assert.deepEqual(result, { miners: { now: 1 } });
+  assert.equal(received.url, "https://proxy.example:8080/1/summary");
+  assert.equal(received.options.headers.get("Authorization"), null);
+});
