@@ -136,3 +136,29 @@ test("PR Agent action is immutable-pinned and cannot write repository content", 
     );
   }
 });
+
+
+test("every static-server allowlist entry exists in this checkout", () => {
+  const server = read("bin/server.js");
+  const match = server.match(/const publicAssetPaths = \\[([\\s\\S]*?)\\];/);
+  assert.ok(match, "static server must declare an explicit public asset allowlist");
+
+  const assetPaths = [...match[1].matchAll(/"([^"]+)"/g)].map(([, assetPath]) => assetPath);
+  assert.ok(assetPaths.length > 0, "allowlist must not be empty");
+
+  for (const assetPath of assetPaths) {
+    assert.ok(
+      existsSync(join(root, assetPath)),
+      `allowlisted asset does not exist: ${assetPath}`,
+    );
+  }
+});
+
+test("static server compares path casing according to platform path semantics", () => {
+  const server = read("bin/server.js");
+
+  assert.match(server, /function matchesAllowlistedPath\\(/);
+  assert.match(server, /process\\.platform === "win32"/);
+  assert.match(server, /canonicalRelativePath\\.toLocaleLowerCase\\("en-US"\\)/);
+  assert.match(server, /return canonicalRelativePath === assetPath/);
+});

@@ -47,6 +47,18 @@ function isWithinRoot(candidate) {
     !isAbsolute(pathFromRoot);
 }
 
+function matchesAllowlistedPath(canonicalRelativePath, assetPath) {
+  // On Windows, realpath() can return filesystem-preserved component casing
+  // even when the checked-out path was requested with the allowlist's casing.
+  // Compare case-insensitively only on Windows; other platforms retain the
+  // exact-case check to avoid accepting a different case-sensitive file.
+  if (process.platform === "win32") {
+    return canonicalRelativePath.toLocaleLowerCase("en-US") ===
+      assetPath.toLocaleLowerCase("en-US");
+  }
+  return canonicalRelativePath === assetPath;
+}
+
 async function loadPublicAssets() {
   const assets = new Map();
 
@@ -56,7 +68,7 @@ async function loadPublicAssets() {
     const canonicalRelativePath = relative(root, realFilePath).split(sep).join("/");
 
     // Reject symlinks and any canonical path that differs from the allowlist.
-    if (!isWithinRoot(realFilePath) || canonicalRelativePath !== assetPath) {
+    if (!isWithinRoot(realFilePath) || !matchesAllowlistedPath(canonicalRelativePath, assetPath)) {
       throw new Error(`Refusing unsafe static asset path: ${assetPath}`);
     }
 
