@@ -1,7 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { copyFile, mkdir, mkdtemp, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { createServer as createTcpServer } from "node:net";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -18,10 +20,42 @@ async function getUnusedPort() {
   return port;
 }
 
-test("static server only exposes public dashboard assets", { timeout: 15000 }, async t => {
+test("static server restricts public assets and serves a startup snapshot", { timeout: 15000 }, async t => {
+  const workspace = await mkdtemp(join(tmpdir(), "xmrig-proxy-dashboard-test-"));
+  const packageRoot = join(workspace, "package");
+  const outsideFile = join(workspace, "outside-secret.js");
+  await mkdir(join(packageRoot, "bin"), { recursive: true });
+  await mkdir(join(packageRoot, "src"), { recursive: true });
+  await copyFile(join(root, "bin/server.js"), join(packageRoot, "bin/server.js"));
+
+  const fixtureFiles = {
+    "index.html": "<!doctype html><title>XMRig Proxy Dashboard</title>",
+    "styles.css": "body { color: black; }",
+    "panel.png": "fake-png",
+    "src/api.js": "export const api = true;",
+    "src/main.js": "trusted-startup-module",
+    "src/status.js": "export const status = true;",
+    "src/storage.js": "export const storage = true;",
+    "src/ui.js": "export const ui = true;",
+    "package.json": "{ \"private\": true, \"type\": \"module\" }",
+    "README.md": "private readme",
+    ".git/config": "[remote \"origin\"]",
+  };
+
+  for (const [relativePath, content] of Object.entries(fixtureFiles)) {
+    const target = join(packageRoot, relativePath);
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, content);
+  }
+  await writeFile(outsideFile, "outside-secret-content");
+
+  t.after(async () => {
+    await rm(workspace, { recursive: true, force: true });
+  });
+
   const port = await getUnusedPort();
-  const child = spawn(process.execPath, [join(root, "bin/server.js")], {
-    cwd: root,
+  const child = spawn(process.execPath, [join(packageRoot, "bin/server.js")], {
+    cwd: packageRoot,
     env: { ...process.env, HOST: "127.0.0.1", PORT: String(port) },
     stdio: "ignore",
   });
@@ -54,6 +88,16 @@ test("static server only exposes public dashboard assets", { timeout: 15000 }, a
   const moduleResponse = await fetch(`${baseUrl}/src/main.js`);
   assert.equal(moduleResponse.status, 200);
   assert.match(moduleResponse.headers.get("content-type"), /javascript/);
+  assert.equal(await moduleResponse.text(), "trusted-startup-module");
+
+  // Replacing an allowed path with an external symlink after startup must not
+  // change what the server serves: requests only read the validated memory map.
+  const mainPath = join(packageRoot, "src/main.js");
+  await rename(mainPath, `${mainPath}.original`);
+  await symlink(outsideFile, mainPath);
+  const cachedModule = await fetch(`${baseUrl}/src/main.js`);
+  assert.equal(cachedModule.status, 200);
+  assert.equal(await cachedModule.text(), "trusted-startup-module");
 
   for (const path of [
     "/package.json",

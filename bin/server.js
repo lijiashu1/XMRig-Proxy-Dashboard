@@ -1,6 +1,7 @@
 #!/usr/bin/env node
+import { constants as fsConstants } from "node:fs";
 import { createServer } from "node:http";
-import { readFile, realpath } from "node:fs/promises";
+import { open, realpath } from "node:fs/promises";
 import { extname, isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -8,7 +9,18 @@ const root = await realpath(resolve(fileURLToPath(new URL("..", import.meta.url)
 const port = Number(process.env.PORT || 8000);
 const host = process.env.HOST || "127.0.0.1";
 
-const allowedRootFiles = new Set(["index.html", "styles.css", "panel.png"]);
+// Only these files are public. Cache validated bytes at startup so a request
+// never follows a filesystem path that could be swapped for a symlink later.
+const publicAssetPaths = [
+  "index.html",
+  "styles.css",
+  "panel.png",
+  "src/api.js",
+  "src/main.js",
+  "src/status.js",
+  "src/storage.js",
+  "src/ui.js",
+];
 
 const mime = {
   ".html": "text/html; charset=utf-8",
@@ -35,7 +47,43 @@ function isWithinRoot(candidate) {
     !isAbsolute(pathFromRoot);
 }
 
-function resolvePublicFile(pathname) {
+async function loadPublicAssets() {
+  const assets = new Map();
+
+  for (const assetPath of publicAssetPaths) {
+    const filePath = resolve(root, assetPath);
+    const realFilePath = await realpath(filePath);
+    const canonicalRelativePath = relative(root, realFilePath).split(sep).join("/");
+
+    // Reject symlinks and any canonical path that differs from the allowlist.
+    if (!isWithinRoot(realFilePath) || canonicalRelativePath !== assetPath) {
+      throw new Error(`Refusing unsafe static asset path: ${assetPath}`);
+    }
+
+    // O_NOFOLLOW protects the final path component where supported. Serving
+    // the resulting bytes from memory removes the request-time TOCTOU window.
+    const flags = fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0);
+    const file = await open(realFilePath, flags);
+    try {
+      const stat = await file.stat();
+      if (!stat.isFile()) {
+        throw new Error(`Static asset is not a regular file: ${assetPath}`);
+      }
+      assets.set(`/${assetPath}`, {
+        data: await file.readFile(),
+        contentType: mime[extname(assetPath).toLowerCase()] || "application/octet-stream",
+      });
+    } finally {
+      await file.close();
+    }
+  }
+
+  return assets;
+}
+
+const publicAssets = await loadPublicAssets();
+
+function findPublicAsset(pathname) {
   let decodedPath;
   try {
     decodedPath = decodeURIComponent(pathname);
@@ -44,56 +92,35 @@ function resolvePublicFile(pathname) {
   }
 
   if (decodedPath.includes("\\") || decodedPath.includes("\0")) return null;
-  const requestPath = decodedPath === "/" ? "index.html" : decodedPath.replace(/^\/+/, "");
-  if (!requestPath) return null;
-
-  const filePath = resolve(root, requestPath);
-  const relativePath = relative(root, filePath);
-  if (!isWithinRoot(filePath)) return null;
-
-  const isRootAsset = allowedRootFiles.has(relativePath);
-  const isApplicationModule = /^src\/[A-Za-z0-9._-]+\.js$/.test(relativePath);
-  if (!isRootAsset && !isApplicationModule) return null;
-
-  return filePath;
+  const publicPath = decodedPath === "/" ? "/index.html" : decodedPath;
+  return publicAssets.get(publicPath) || null;
 }
 
-const server = createServer(async (req, res) => {
+const server = createServer((req, res) => {
   if (req.method !== "GET" && req.method !== "HEAD") {
-    res.writeHead(405, { "Allow": "GET, HEAD", "Content-Type": "text/plain; charset=utf-8" });
+    res.writeHead(405, {
+      "Allow": "GET, HEAD",
+      "Content-Type": "text/plain; charset=utf-8"
+    });
     res.end("Method Not Allowed");
     return;
   }
 
-  try {
-    const requestPath = new URL(req.url || "/", "http://localhost").pathname;
-    const filePath = resolvePublicFile(requestPath);
-    if (!filePath) {
-      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
-      res.end("Not Found");
-      return;
-    }
-
-    // The allowlist prevents metadata exposure; realpath containment also
-    // prevents an allowed-looking symlink from escaping the package root.
-    const realFilePath = await realpath(filePath);
-    if (!isWithinRoot(realFilePath)) {
-      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
-      res.end("Not Found");
-      return;
-    }
-
-    const data = await readFile(realFilePath);
-    res.writeHead(200, {
-      "Content-Type": mime[extname(realFilePath).toLowerCase()] || "application/octet-stream",
-      "Cache-Control": "no-cache",
-      "X-Content-Type-Options": "nosniff"
-    });
-    res.end(req.method === "HEAD" ? undefined : data);
-  } catch {
+  const requestPath = new URL(req.url || "/", "http://localhost").pathname;
+  const asset = findPublicAsset(requestPath);
+  if (!asset) {
     res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
     res.end("Not Found");
+    return;
   }
+
+  res.writeHead(200, {
+    "Content-Type": asset.contentType,
+    "Content-Length": String(asset.data.byteLength),
+    "Cache-Control": "no-cache",
+    "X-Content-Type-Options": "nosniff"
+  });
+  res.end(req.method === "HEAD" ? undefined : asset.data);
 });
 
 server.listen(port, host, () => {

@@ -166,11 +166,41 @@ test("request omits Authorization when no API token is configured", async () => 
     };
   };
 
-  const result = await request("/1/summary", {
-    headers: { Authorization: "Bearer stale-token" },
-  });
+  const result = await request("/1/summary");
 
   assert.deepEqual(result, { miners: { now: 1 } });
   assert.equal(received.url, "https://proxy.example:8080/1/summary");
   assert.equal(received.options.headers.get("Authorization"), null);
+});
+
+test("request preserves an explicitly supplied custom auth scheme without a configured API token", async () => {
+  saveConfig({
+    apiUrl: "https://proxy.example:8080/",
+    apiToken: "",
+    remember: true,
+    refreshInterval: 10,
+  });
+
+  const debugMessages = [];
+  console.debug = message => debugMessages.push(message);
+  let received;
+  globalThis.fetch = async (url, options) => {
+    received = { url, options };
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        return {};
+      },
+    };
+  };
+
+  await request("/1/summary", {
+    headers: { Authorization: "Basic example-credential" },
+  });
+
+  assert.equal(received.options.headers.get("Authorization"), "Basic example-credential");
+  assert.equal(debugMessages.length, 1);
+  assert.match(debugMessages[0], /custom \(redacted\)/);
+  assert.doesNotMatch(debugMessages[0], /example-credential/);
 });
