@@ -39,15 +39,19 @@ export async function request(path, options = {}) {
   const apiToken = typeof cfg.apiToken === "string" ? cfg.apiToken : "";
   const hasToken = apiToken.length > 0;
 
-  // Tokenless proxies are valid. Do not send a stale or caller-supplied
-  // Authorization header when no token is configured for this connection.
+  // A configured proxy token always takes precedence. Without one, do not
+  // synthesize an Authorization header, but preserve an explicit caller
+  // header so callers can use other schemes (for example Basic or a custom
+  // token header value) when they intentionally pass it in request options.
   if (hasToken) {
-    // Fixed-length mask prevents debug output from revealing token length.
     headers.set("Authorization", `Bearer ${apiToken}`);
-  } else {
-    headers.delete("Authorization");
   }
-  console.debug(`API request → ${url} – Authorization: ${hasToken ? "Bearer **********" : "(none)"}`);
+
+  // Never log credential contents, including caller-supplied auth schemes.
+  const authorizationForLog = hasToken
+    ? "Bearer **********"
+    : headers.has("Authorization") ? "custom (redacted)" : "(none)";
+  console.debug(`API request → ${url} – Authorization: ${authorizationForLog}`);
 
   // 8-second timeout via the platform-native AbortSignal so the underlying
   // fetch is actually cancelled (Promise.race used to leave it draining).
